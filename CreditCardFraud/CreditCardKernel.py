@@ -11,12 +11,20 @@ from keras import backend as K
 from sklearn.utils import class_weight
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import confusion_matrix
+from sklearn import preprocessing
 
 # Hyperparameters
 EPOCHS = 10
 VERBOSE = 2
 OPTIMIZER = SGD()
 BATCH_SIZE = 256
+
+
+def normalize(df):
+    x = df.values  # returns a numpy array
+    min_max_scaler = preprocessing.MinMaxScaler()
+    x_scaled = min_max_scaler.fit_transform(x)
+    return pd.DataFrame(x_scaled)
 
 
 def sensitivity(y_true, y_pred):
@@ -53,25 +61,26 @@ if __name__ == "__main__":
     y_train = targets.loc[X_train.index]
     y_test = targets.drop(X_train.index)
     # copy sparse data to train set
-    aug = data.loc[X_train.index]
+    """aug = data.loc[X_train.index]
     aug = aug[data["Class"] == 1]
     aug_X = pd.concat([aug.loc[:, aug.columns != "Class"]] * 500)
     aug_y = pd.concat([aug.loc[:, aug.columns == "Class"]] * 500)
     X_train = X_train.append(aug_X, ignore_index=True)
-    y_train = y_train.append(aug_y, ignore_index=True)
-
-    print(aug_X, aug_y)
+    y_train = y_train.append(aug_y, ignore_index=True)"""
+    X_train = normalize(X_train)
+    X_test = normalize(X_test)
+    #print(aug_X, aug_y)
 
     print(X_train, y_train, X_test, y_test)
     ANN = construct_ANN_classifier(20, 128)
     ANN.summary()
 
     print(y_test)
-    class_weights = {0: 1, 1: 100000}
+    class_weights = {0: 1, 1: 300}
     y_train = to_categorical(y_train)
     y_test = to_categorical(y_test)
     print(class_weights)
-    ANN.compile(optimizer=OPTIMIZER, loss="categorical_crossentropy", metrics=[sensitivity, "accuracy"])
+    ANN.compile(optimizer=OPTIMIZER, loss="categorical_crossentropy", metrics=[specificity, "accuracy"])
     ANN.fit(X_train, y_train, batch_size=BATCH_SIZE, epochs=EPOCHS, verbose=VERBOSE, validation_split=0.2, class_weight=class_weights)
 
     score = ANN.evaluate(X_test, y_test, batch_size=BATCH_SIZE, verbose=VERBOSE)
