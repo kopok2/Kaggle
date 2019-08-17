@@ -11,12 +11,21 @@ Scaling and sub-sampling is being used.
 import numpy as np
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.linear_model import SGDClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import ExtraTreesClassifier
+import xgboost as xgb
 
-
-VERBOSE = True
+VERBOSE = False
 
 
 def load_dataset(verbose=True):
@@ -91,6 +100,15 @@ class DoubleTreeModel:
         return result
 
 
+def eval_metric(confusion_mx):
+    print(confusion_mx)
+    base = confusion_mx[0][1] + sum(confusion_mx[1])
+    if base:
+        print("{0:.2f}%".format((confusion_mx[1][1] / base) * 100))
+    else:
+        print("100.00%")
+
+
 if __name__ == "__main__":
     print("Credit Card Fraud Detection kernel.\nCopyright 2019 Karol Oleszek")
 
@@ -105,34 +123,50 @@ if __name__ == "__main__":
 
     for cr in ['gini', 'entropy']:
         for spl in ['best', 'random']:
-            print(cr, spl)
-            DCT = DecisionTreeClassifier(criterion=cr, splitter=spl, class_weight={0: 1, 1: 400})
-            DCT.fit(undersampled_X_train, undersampled_y_train)
+            second_line_models = [DecisionTreeClassifier(criterion=cr, splitter=spl),
+                                  KNeighborsClassifier(n_neighbors=4),
+                                  NearestCentroid(metric='euclidean'),
+                                  SVC(gamma="auto", class_weight="balanced"),
+                                  MLPClassifier(alpha=1, max_iter=1000),
+                                  AdaBoostClassifier(),
+                                  RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+                                  SGDClassifier(max_iter=1000, tol=1e-3),
+                                  GaussianNB(),
+                                  QuadraticDiscriminantAnalysis(),
+                                  GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,
+                                                             max_depth=1),
+                                  ExtraTreesClassifier(n_estimators=50, max_depth=None,
+                                                       min_samples_split=2, criterion=cr),
+                                  xgb.XGBClassifier(objective="binary:logistic", random_state=42)]
+            for slm in second_line_models:
+                print(cr, spl, slm)
+                DCT = DecisionTreeClassifier(criterion=cr, splitter=spl, class_weight={0: 1, 1: 400})
+                DCT.fit(undersampled_X_train, undersampled_y_train)
 
-            if VERBOSE:
-                print("First line")
+                if VERBOSE:
+                    print("First line")
+                    print("Test")
+                    eval_metric(confusion_matrix(y_test, DCT.predict(X_test)))
+                    print("Training")
+                    eval_metric(confusion_matrix(y_train, DCT.predict(X_train)))
+
+                selected = DCT.predict(X_train)
+                follow_X = X_train[selected == 1]
+                follow_y = y_train[selected == 1]
+
+                DCT_followup = slm
+                DCT_followup.fit(follow_X, follow_y)
+
+                if VERBOSE:
+                    print("Second line")
+                    print("Test")
+                    eval_metric(confusion_matrix(y_test, DCT_followup.predict(X_test)))
+                    print("Training")
+                    eval_metric(confusion_matrix(follow_y, DCT_followup.predict(follow_X)))
+
+                DOUBLE_MODEL = DoubleTreeModel(DCT, DCT_followup)
+                print("Double model")
                 print("Test")
-                print(confusion_matrix(y_test, DCT.predict(X_test)))
+                eval_metric(confusion_matrix(y_test, DOUBLE_MODEL.predict(X_test)))
                 print("Training")
-                print(confusion_matrix(y_train, DCT.predict(X_train)))
-
-            selected = DCT.predict(X_train)
-            follow_X = X_train[selected == 1]
-            follow_y = y_train[selected == 1]
-
-            DCT_followup = DecisionTreeClassifier(criterion=cr, splitter=spl)
-            DCT_followup.fit(follow_X, follow_y)
-
-            if VERBOSE:
-                print("Second line")
-                print("Test")
-                print(confusion_matrix(y_test, DCT_followup.predict(X_test)))
-                print("Training")
-                print(confusion_matrix(follow_y, DCT_followup.predict(follow_X)))
-
-            DOUBLE_MODEL = DoubleTreeModel(DCT, DCT_followup)
-            print("Double model")
-            print("Test")
-            print(confusion_matrix(y_test, DOUBLE_MODEL.predict(X_test)))
-            print("Training")
-            print(confusion_matrix(y_train, DOUBLE_MODEL.predict(X_train)))
+                eval_metric(confusion_matrix(y_train, DOUBLE_MODEL.predict(X_train)))
