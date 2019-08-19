@@ -9,7 +9,7 @@ Scaling and sub-sampling is being used.
 """
 
 import numpy as np
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, LabelBinarizer
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
 import pandas as pd
@@ -24,7 +24,17 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 import xgboost as xgb
-
+import lightgbm as lgb
+from keras.models import Sequential
+from keras.optimizers import SGD, Adam
+from keras.layers import Dense, Activation, Dropout
+from keras.utils import to_categorical
+import keras.backend as K
+import tensorflow as tf
+# Hyperparameters
+EPOCHS = 100
+OPTIMIZER = Adam(lr=0.0002)
+BATCH_SIZE = 512
 VERBOSE = False
 
 
@@ -94,8 +104,12 @@ class DoubleTreeModel:
         y = 0
         for x in range(len(result)):
             if first_class[x]:
-                if second_class[y]:
-                    result[x] = 1
+                try:
+                    if second_class[y]:
+                        result[x] = 1
+                except:
+                    if second_class[y][0] < second_class[y][1]:
+                        result[x] = 1
                 y += 1
         return result
 
@@ -107,6 +121,19 @@ def eval_metric(confusion_mx):
         print("{0:.2f}%".format((confusion_mx[1][1] / base) * 100))
     else:
         print("100.00%")
+
+
+def construct_ANN_classifier(layers, width):
+    print("Constructing neural network with {0} layers and {1} width...".format(layers, width))
+    model = Sequential()
+    model.add(Dense(width, input_shape=(30,)))
+    model.add(Activation("sigmoid"))
+    for layer in range(layers):
+        model.add(Dense(width))
+        model.add(Activation("relu"))
+    model.add(Dense(2))
+    model.add(Activation("softmax"))
+    return model
 
 
 if __name__ == "__main__":
@@ -121,23 +148,37 @@ if __name__ == "__main__":
     undersampled_X_train = ndf.drop("Class", axis=1)
     undersampled_y_train = ndf["Class"]
 
-    for cr in ['gini', 'entropy']:
-        for spl in ['best', 'random']:
+    print("LGBM model training...")
+    train_data = lgb.Dataset(X_train, label=y_train)
+    param = {'objective': 'binary', "learning_rate":0.01}
+    param['metric'] = ['auc']
+    num_round = 500
+    lgb_model = lgb.train(param, train_data, num_round, valid_sets=[lgb.Dataset(X_test, y_test)])
+    print("Test")
+    eval_metric(confusion_matrix(y_test, lgb_model.predict(X_test).round()))
+    print("Training")
+    eval_metric(confusion_matrix(y_train, lgb_model.predict(X_train).round()))
+
+    for cr in ['gini']: #, 'entropy']:
+        for spl in ['best']: #, 'random']:
             second_line_models = [DecisionTreeClassifier(criterion=cr, splitter=spl),
                                   KNeighborsClassifier(n_neighbors=4),
                                   NearestCentroid(metric='euclidean'),
                                   SVC(gamma="auto", class_weight="balanced"),
-                                  MLPClassifier(alpha=1, max_iter=1000),
-                                  AdaBoostClassifier(),
-                                  RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
-                                  SGDClassifier(max_iter=1000, tol=1e-3),
-                                  GaussianNB(),
-                                  QuadraticDiscriminantAnalysis(),
-                                  GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,
-                                                             max_depth=1),
+                                  #MLPClassifier(alpha=1, max_iter=1000),
+                                  #AdaBoostClassifier(),
+                                  #RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+                                  #SGDClassifier(max_iter=1000, tol=1e-3),
+                                  #GaussianNB(),
+                                  #QuadraticDiscriminantAnalysis(),
+                                  #GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,
+                                  #                           max_depth=1),
                                   ExtraTreesClassifier(n_estimators=50, max_depth=None,
                                                        min_samples_split=2, criterion=cr),
-                                  xgb.XGBClassifier(objective="binary:logistic", random_state=42)]
+                                  #xgb
+                                  lgb,
+                                  "ann"
+                                  ]
             for slm in second_line_models:
                 print(cr, spl, slm)
                 DCT = DecisionTreeClassifier(criterion=cr, splitter=spl, class_weight={0: 1, 1: 400})
@@ -155,7 +196,25 @@ if __name__ == "__main__":
                 follow_y = y_train[selected == 1]
 
                 DCT_followup = slm
-                DCT_followup.fit(follow_X, follow_y)
+                if "xgboost" in str(slm):
+                    DCT_followup = xgb.XGBClassifier()
+                    DCT_followup.set_params(**{'predictor': 'cpu_predictor', 'max_depth':2, 'eta':1, 'objective':'binary:logistic'})
+                    DCT_followup.fit(follow_X, follow_y)
+                elif "lightgbm" in str(slm):
+                    train_data = lgb.Dataset(follow_X, label=follow_y)
+                    param = {'objective': 'binary', "learning_rate":0.01}
+                    param['metric'] = ['binary_error']
+                    num_round = 500
+                    DCT_followup = lgb.train(param, train_data, num_round)
+                elif "ann" in str(slm): # 20 72
+                    DCT_followup = construct_ANN_classifier(25, 80)
+                    DCT_followup.summary()
+                    DCT_followup.compile(optimizer=OPTIMIZER, loss="sparse_categorical_crossentropy", metrics=["sparse_categorical_accuracy"])
+                    print(undersampled_y_train)
+                    DCT_followup.fit(follow_X, follow_y, batch_size=BATCH_SIZE, epochs=EPOCHS, verbose=2,
+                            validation_split=0.2)
+                else:
+                    DCT_followup.fit(follow_X, follow_y)
 
                 if VERBOSE:
                     print("Second line")
@@ -167,6 +226,6 @@ if __name__ == "__main__":
                 DOUBLE_MODEL = DoubleTreeModel(DCT, DCT_followup)
                 print("Double model")
                 print("Test")
-                eval_metric(confusion_matrix(y_test, DOUBLE_MODEL.predict(X_test)))
+                eval_metric(confusion_matrix(y_test, DOUBLE_MODEL.predict(X_test).round()))
                 print("Training")
-                eval_metric(confusion_matrix(y_train, DOUBLE_MODEL.predict(X_train)))
+                eval_metric(confusion_matrix(y_train, DOUBLE_MODEL.predict(X_train).round()))
