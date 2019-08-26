@@ -15,6 +15,7 @@ from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
 import pandas as pd
 from sklearn.metrics import confusion_matrix
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import IsolationForest
 from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
@@ -147,6 +148,15 @@ if __name__ == "__main__":
     ndf = subsample_dataset(df, VERBOSE)
     undersampled_X_train = ndf.drop("Class", axis=1)
     undersampled_y_train = ndf["Class"]
+    print("Isolation forest")
+    model = IsolationForest(behaviour='new',
+                            contamination=500 / 300_000,
+                            random_state=42)
+    model.fit(X_train, y_train)
+    print("Test")
+    eval_metric(confusion_matrix(y_test, model.predict(X_test).round()))
+    print("Training")
+    eval_metric(confusion_matrix(y_train, model.predict(X_train).round()))
 
     print("LGBM model training...")
     train_data = lgb.Dataset(X_train, label=y_train)
@@ -177,7 +187,10 @@ if __name__ == "__main__":
                                                        min_samples_split=2, criterion=cr),
                                   #xgb
                                   lgb,
-                                  "ann"
+                                  "ann",
+                                  IsolationForest(behaviour='new',
+                                                  contamination=500/300_000,
+                                                  random_state=42)
                                   ]
             for slm in second_line_models:
                 print(cr, spl, slm)
