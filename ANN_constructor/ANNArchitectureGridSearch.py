@@ -75,7 +75,7 @@ def architecture_grid_search(X, y, X_val, y_val, max_depth=40,
                     for yp in range(1, max_width):
 
                         architecture = fixed_architecture(x, yp)
-                        epochs = (x + yp) * 6
+                        epochs = (x + yp) * 2
                         model = ANNClassifier(X.shape[1], len(np.unique(y)),
                                               architecture=architecture,
                                               VERBOSE=0, OPTIMIZER=optimizer,
