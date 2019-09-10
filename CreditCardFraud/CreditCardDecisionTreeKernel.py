@@ -162,7 +162,7 @@ if __name__ == "__main__":
     train_data = lgb.Dataset(X_train, label=y_train)
     param = {'objective': 'binary', "learning_rate":0.01}
     param['metric'] = ['auc']
-    num_round = 500
+    num_round = 1100
     lgb_model = lgb.train(param, train_data, num_round, valid_sets=[lgb.Dataset(X_test, y_test)])
     print("Test")
     eval_metric(confusion_matrix(y_test, lgb_model.predict(X_test).round()))
@@ -217,7 +217,7 @@ if __name__ == "__main__":
                     train_data = lgb.Dataset(follow_X, label=follow_y)
                     param = {'objective': 'binary', "learning_rate":0.01}
                     param['metric'] = ['binary_error']
-                    num_round = 500
+                    num_round = 1000
                     DCT_followup = lgb.train(param, train_data, num_round)
                 elif "ann" in str(slm): # 20 72
                     DCT_followup = construct_ANN_classifier(25, 80)
